@@ -15,7 +15,7 @@ TRAIN_LABEL_FILE = 'train_label.txt'
 TEST_LABEL_FILE  = 'test_label.txt'
 
 NLABELS = 5
-batch_size = 64
+batch_size = 16
 
 transformations = transforms.Compose([
         transforms.Scale(256),
@@ -43,23 +43,31 @@ class MultiLabelNN(nn.Module):
     def __init__(self, nlabel):
         super(MultiLabelNN, self).__init__()
         self.nlabel = nlabel
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(179776,1024)
-        self.fc2 = nn.Linear(1024, nlabel)
+        self.conv1 = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 6, 5, 1, 1),
+            torch.nn.BatchNorm2d(6),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(2))
+        self.conv2 = torch.nn.Sequential(
+            torch.nn.Conv2d(6, 16, 5, 1, 1),
+            torch.nn.BatchNorm2d(16),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(2))
+        self.dense = torch.nn.Sequential(
+            torch.nn.Linear(46656, 1024),
+            torch.nn.BatchNorm1d(1024),
+            torch.nn.ReLU(),
+            torch.nn.Linear(1024, 256),
+            torch.nn.BatchNorm1d(256),
+            torch.nn.ReLU(),
+            torch.nn.Linear(256, self.nlabel)
+        )
     def forward(self, x):
         x = self.conv1(x)
-        x = F.relu(x)
-        x = self.pool(x)
         x = self.conv2(x)
-        x = F.relu(x)
-        # x = self.pool(x)
-        x = x.view(-1, 179776)
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.fc2(x)
-        return x
+        res = x.view(x.size(0), -1)
+        out = self.dense(res)
+        return out
 
 use_gpu = torch.cuda.is_available()
 model = MultiLabelNN(NLABELS)
@@ -69,11 +77,12 @@ if use_gpu:
 optimizer = optim.Adam(model.parameters(), lr=0.0001)
 criterion = nn.MultiLabelMarginLoss()
 
-epochs = 3
+epochs = 10
 for epoch in range(epochs):
     ### training phase
     total_training_loss = 0.0
     # total = 0.0
+    model.train()
     for iter, traindata in enumerate(train_loader, 0):
         train_inputs, train_labels = traindata
         if use_gpu:
@@ -90,12 +99,14 @@ for epoch in range(epochs):
         print('Training Phase: Epoch: [%2d][%2d/%2d]\tIteration Loss: %.3f' %
               (iter, epoch+1, epochs, loss.item() / train_labels.size(0)))
     ### testing phase
-    for iter, testdata in enumerate(test_loader, 0):
-        test_inputs, test_labels = testdata
-        if use_gpu:
-            test_inputs, test_labels = test_inputs.cuda(), test_labels.cuda()
-
-        test_outputs = model(test_inputs)
-        test_loss = criterion(test_outputs, test_labels)
-        print('Testing Phase: Epoch: [%2d][%2d/%2d]\tIteration Loss: %.3f' %
-              (iter, epoch+1, epochs, test_loss.item() / test_labels.size(0)))
+    model.eval()
+    with torch.no_grad():
+        for iter, testdata in enumerate(test_loader, 0):
+            test_inputs, test_labels = testdata
+            if use_gpu:
+                test_inputs, test_labels = test_inputs.cuda(), test_labels.cuda()
+    
+            test_outputs = model(test_inputs)
+            test_loss = criterion(test_outputs, test_labels)
+            print('Testing Phase: Epoch: [%2d][%2d/%2d]\tIteration Loss: %.3f' %
+                  (iter, epoch+1, epochs, test_loss.item() / test_labels.size(0)))
