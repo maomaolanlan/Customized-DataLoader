@@ -16,7 +16,12 @@ class DatasetProcessing(Dataset):
         # reading labels from file
         label_filepath = os.path.join(data_path, label_filename)
         labels = np.loadtxt(label_filepath, dtype=np.int64)
-        self.label = labels
+        
+        labels2=[[-1]*len(labels[0]) for i in range(len(labels))]
+        for i,row in enumerate(labels):
+            indexs=[i for i in range(len(row)) if row[i] == 1]
+            labels2[i][0:len(indexs)]=indexs
+        self.label = np.array(labels2,dtype=np.int64)
 
     def __getitem__(self, index):
         img = Image.open(os.path.join(self.img_path, self.img_filename[index]))
