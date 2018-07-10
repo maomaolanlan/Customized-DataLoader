@@ -1,4 +1,4 @@
-#建立当前分支是为了学习 多标签loss函数MultiLabelMarginLoss的使用
+# 多标签loss函数MultiLabelMarginLoss的使用
 ---
  Customized DataLoader for multi label classification-[pytorch implementation]
 ---
